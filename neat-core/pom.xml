@@ -14,4 +14,20 @@
     <artifactId>neat-core</artifactId>
     <name>NEAT Core</name>
     <description>Core NEAT data structures: genes, genomes, neural-network phenotype, activation functions, and innovation tracking</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>
