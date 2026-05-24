@@ -8,6 +8,8 @@ import org.testng.Assert;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -281,5 +283,104 @@ public class GenomeImplTest {
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testFromBytes_tooShortArray_throwsIllegalArgumentException() {
         minimalGenome.fromBytes(new byte[2]); // too short to decode even node count
+    }
+
+    /**
+     * Covers GenomeImpl.java {@code matching > 0 ? ... : 0.0} false branch:
+     * when two genomes share no common innovation numbers, {@code matching == 0} and
+     * {@code wBar} must default to {@code 0.0} without a divide-by-zero.
+     *
+     * <p>Genome A has only innovation {1}; genome B has only innovation {2}.
+     * No gene appears in both → {@code matching = 0} → ternary takes the false path.
+     */
+    @Test
+    public void testCompatibilityDistance_noMatchingGenes_wBarIsZero() {
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(0, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(1, NodeType.OUTPUT, 0.0)
+        );
+        // Genome A: innovation {1} only
+        List<ConnectionGene> connsA = List.of(
+                new ConnectionGeneImpl(0, 1, 0, 1, 5.0, true)
+        );
+        // Genome B: innovation {2} only — no overlap with A
+        List<ConnectionGene> connsB = List.of(
+                new ConnectionGeneImpl(0, 2, 0, 1, -5.0, true)
+        );
+        GenomeImpl genomeA = new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(connsA));
+        GenomeImpl genomeB = new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(connsB));
+
+        // c1=0, c2=0, c3=1 → result = 0 + 1 * wBar; with matching=0, wBar=0.0 → result=0.0
+        double d = genomeA.compatibilityDistance(genomeB, 0.0, 0.0, 1.0);
+        Assert.assertEquals(d, 0.0, 1e-9,
+                "When no genes match (matching=0), wBar must default to 0.0 (no divide-by-zero)");
+    }
+
+    /**
+     * Covers GenomeImpl.java line 172: data contains a valid nodeCount but is truncated
+     * before all node-gene bytes are present.
+     *
+     * <p>Encoding: nodeCount=1 (4 bytes), but no node-gene bytes follow (need 16).
+     */
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testFromBytes_nodeCountPresentButNodeDataMissing_throwsIllegalArgumentException() {
+        ByteBuffer buf = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(1); // claims 1 node gene, but zero bytes follow
+        minimalGenome.fromBytes(buf.array());
+    }
+
+    /**
+     * Covers GenomeImpl.java line 187: data contains a valid nodeCount (0 nodes) and a
+     * valid connCount but is truncated before all connection-gene bytes are present.
+     *
+     * <p>Encoding: nodeCount=0 (4 bytes), connCount=1 (4 bytes), but no connection bytes follow
+     * (need 25 per connection).
+     */
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testFromBytes_connCountPresentButConnDataMissing_throwsIllegalArgumentException() {
+        ByteBuffer buf = ByteBuffer.allocate(Integer.BYTES * 2).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(0); // 0 node genes — valid
+        buf.putInt(1); // claims 1 connection gene, but zero bytes follow
+        minimalGenome.fromBytes(buf.array());
+    }
+
+    // -------------------------------------------------------------------------
+    // compatibilityDistance — genuinely disjoint genes (covers line 122)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Covers GenomeImpl.java line 122 ({@code disjoint++}): a gene present in only one
+     * genome that falls <em>within</em> the overlapping innovation-number range.
+     *
+     * <p>Genome A has innovations {1, 3}; genome B has innovations {1, 2, 3}.
+     * boundary = min(maxInnA=3, maxInnB=3) = 3.
+     * Innovation 2 (only in B) satisfies 2 ≤ 3, so it is <strong>disjoint</strong>, not excess.
+     */
+    @Test
+    public void testCompatibilityDistance_genuinelyDisjointGene_coversDisjointBranch() {
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(0, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(1, NodeType.HIDDEN, 0.0),
+                new NodeGeneImpl(2, NodeType.OUTPUT, 0.0)
+        );
+        // Genome A: innovations {1, 3}; maxInn = 3
+        List<ConnectionGene> connsA = List.of(
+                new ConnectionGeneImpl(0, 1, 0, 2, 1.0, true),
+                new ConnectionGeneImpl(1, 3, 1, 2, 0.5, true)
+        );
+        // Genome B: innovations {1, 2, 3}; maxInn = 3 → boundary = min(3,3) = 3
+        // Innovation 2 is in B only and 2 ≤ boundary(3) → disjoint
+        List<ConnectionGene> connsB = List.of(
+                new ConnectionGeneImpl(0, 1, 0, 2, 1.0, true),
+                new ConnectionGeneImpl(1, 2, 1, 2, 0.5, true),
+                new ConnectionGeneImpl(2, 3, 1, 2, 0.5, true)
+        );
+        GenomeImpl genomeA = new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(connsA));
+        GenomeImpl genomeB = new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(connsB));
+
+        // c1=0 (ignore excess), c2=1 (count disjoint), c3=0 — distance must be > 0
+        double d = genomeA.compatibilityDistance(genomeB, 0.0, 1.0, 0.0);
+        Assert.assertTrue(d > 0.0,
+                "A disjoint gene (within both genomes' innovation range but absent in one) must produce distance > 0 with c2 > 0");
     }
 }

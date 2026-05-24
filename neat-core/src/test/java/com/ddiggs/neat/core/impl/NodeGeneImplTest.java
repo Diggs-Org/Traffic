@@ -5,6 +5,9 @@ import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
  * TDD tests for {@link NodeGeneImpl}.
  *
@@ -159,5 +162,37 @@ public class NodeGeneImplTest {
     public void testFromBytes_tooLongArray_throwsIllegalArgumentException() {
         NodeGeneImpl gene = new NodeGeneImpl(1, NodeType.INPUT, 0.0);
         gene.fromBytes(new byte[20]); // needs exactly 16
+    }
+
+    /**
+     * Covers NodeGeneImpl.java {@code ordinal >= values.length} branch:
+     * the ordinal in the byte array exceeds the number of {@link NodeType} constants.
+     *
+     * <p>Overwrites bytes 4–7 (the NodeType ordinal field) with {@code 99},
+     * which is ≥ 4 (the number of NodeType values).
+     */
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testFromBytes_invalidNodeTypeOrdinal_throwsIllegalArgumentException() {
+        NodeGeneImpl gene = new NodeGeneImpl(1, NodeType.INPUT, 0.5);
+        byte[] data = gene.toBytes(); // produces valid 16-byte array
+        // Overwrite the NodeType ordinal (bytes 4–7) with an out-of-range value
+        ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).putInt(4, 99);
+        gene.fromBytes(data); // must throw IllegalArgumentException
+    }
+
+    /**
+     * Covers NodeGeneImpl.java {@code ordinal < 0} branch (short-circuit in
+     * {@code ordinal < 0 || ordinal >= values.length}).
+     *
+     * <p>Overwrites bytes 4–7 with {@code -1}, which is negative and therefore
+     * fails the first sub-condition before the second is evaluated.
+     */
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testFromBytes_negativeNodeTypeOrdinal_throwsIllegalArgumentException() {
+        NodeGeneImpl gene = new NodeGeneImpl(1, NodeType.INPUT, 0.5);
+        byte[] data = gene.toBytes();
+        // Overwrite ordinal (bytes 4–7) with -1 → triggers the ordinal < 0 branch
+        ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).putInt(4, -1);
+        gene.fromBytes(data);
     }
 }
