@@ -54,4 +54,17 @@ public interface ConnectionGene extends Gene {
      * @return {@code true} if the connection participates in activation; {@code false} if disabled
      */
     boolean isEnabled();
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The returned instance is a {@code ConnectionGene} whose innovation number,
+     * node ids, weight, and enabled flag match the serialised values.
+     *
+     * @param data the byte array previously produced by {@link #toBytes()}; must not be {@code null}
+     * @return a new {@code ConnectionGene} instance whose state matches the serialised form
+     * @throws IllegalArgumentException if {@code data} is malformed or incompatible with this type
+     */
+    @Override
+    ConnectionGene fromBytes(byte[] data);
 }

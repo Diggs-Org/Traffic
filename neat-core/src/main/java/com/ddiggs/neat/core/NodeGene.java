@@ -30,4 +30,17 @@ public interface NodeGene extends Gene {
      * @return the node's bias
      */
     double getBias();
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The returned instance is a {@code NodeGene} whose {@link #getNodeType()} and
+     * {@link #getBias()} match the serialised values.
+     *
+     * @param data the byte array previously produced by {@link #toBytes()}; must not be {@code null}
+     * @return a new {@code NodeGene} instance whose state matches the serialised form
+     * @throws IllegalArgumentException if {@code data} is malformed or incompatible with this type
+     */
+    @Override
+    NodeGene fromBytes(byte[] data);
 }

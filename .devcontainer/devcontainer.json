@@ -25,6 +25,7 @@
     "ATLASSIAN_API_TOKEN": "${localEnv:ATLASSIAN_API_TOKEN}",
     "ATLASSIAN_BASIC_AUTH": "${localEnv:ATLASSIAN_BASIC_AUTH}",
     "ATLASSIAN_URL": "${localEnv:ATLASSIAN_URL}",
+    "GITHUB_REVIEWER": "${localEnv:GITHUB_REVIEWER}"
   },
   "customizations": {
     "vscode": {

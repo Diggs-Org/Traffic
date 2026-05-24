@@ -46,4 +46,28 @@ public interface Genome {
      * @return a non-negative distance value; {@code 0.0} means the genomes are identical
      */
     double compatibilityDistance(Genome other, double c1, double c2, double c3);
+
+    /**
+     * Serializes this genome — its complete node-gene and connection-gene lists — to a
+     * byte array for persistence or transmission.
+     *
+     * <p>The encoding must be self-contained so that a full {@code Genome} can be
+     * reconstructed via {@link #fromBytes(byte[])} without any external context.
+     *
+     * @return a non-null byte array encoding the entire genotype state
+     */
+    byte[] toBytes();
+
+    /**
+     * Deserializes a genome of the same concrete type from the supplied byte array.
+     *
+     * <p>This follows the <em>prototype</em> pattern: the method is dispatched on an
+     * existing instance solely for type resolution; the returned object is entirely
+     * independent of {@code this}.
+     *
+     * @param data the byte array previously produced by {@link #toBytes()}; must not be {@code null}
+     * @return a new {@code Genome} whose node genes and connection genes match the serialised form
+     * @throws IllegalArgumentException if {@code data} is malformed or incompatible with this type
+     */
+    Genome fromBytes(byte[] data);
 }
