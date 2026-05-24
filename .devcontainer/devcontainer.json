@@ -1,5 +1,5 @@
 {
-  "name": "python-typescript-dev",
+  "name": "python-typescript-java-dev",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 
   "features": {
@@ -8,6 +8,12 @@
     },
     "ghcr.io/devcontainers/features/node:2.0.0": {
       "version": "22"
+    },
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "25",
+      "jdkDistro": "ms",
+      "installMaven": true,
+      "mavenVersion": "3.9"
     },
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {
     }
@@ -19,6 +25,7 @@
     "ATLASSIAN_API_TOKEN": "${localEnv:ATLASSIAN_API_TOKEN}",
     "ATLASSIAN_BASIC_AUTH": "${localEnv:ATLASSIAN_BASIC_AUTH}",
     "ATLASSIAN_URL": "${localEnv:ATLASSIAN_URL}",
+    "GITHUB_REVIEWER": "${localEnv:GITHUB_REVIEWER}"
   },
   "customizations": {
     "vscode": {
@@ -26,7 +33,8 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "vscjava.vscode-java-pack"
       ]
     }
   },
