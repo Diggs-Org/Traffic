@@ -3,6 +3,9 @@ package com.ddiggs.neat.core.impl;
 import com.ddiggs.neat.core.NodeGene;
 import com.ddiggs.neat.core.NodeType;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
  * Immutable implementation of {@link NodeGene}.
  *
@@ -14,6 +17,9 @@ import com.ddiggs.neat.core.NodeType;
  * </pre>
  */
 public class NodeGeneImpl implements NodeGene {
+
+    /** Exact byte length produced and consumed by {@link #toBytes()} / {@link #fromBytes(byte[])}. */
+    static final int BYTE_LENGTH = 16;
 
     private final int id;
     private final NodeType nodeType;
@@ -35,19 +41,19 @@ public class NodeGeneImpl implements NodeGene {
     /** {@inheritDoc} */
     @Override
     public int getId() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return id;
     }
 
     /** {@inheritDoc} */
     @Override
     public NodeType getNodeType() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return nodeType;
     }
 
     /** {@inheritDoc} */
     @Override
     public double getBias() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return bias;
     }
 
     /**
@@ -58,7 +64,11 @@ public class NodeGeneImpl implements NodeGene {
      */
     @Override
     public byte[] toBytes() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        ByteBuffer buf = ByteBuffer.allocate(BYTE_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(id);
+        buf.putInt(nodeType.ordinal());
+        buf.putDouble(bias);
+        return buf.array();
     }
 
     /**
@@ -68,6 +78,19 @@ public class NodeGeneImpl implements NodeGene {
      */
     @Override
     public NodeGeneImpl fromBytes(byte[] data) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        if (data == null || data.length != BYTE_LENGTH) {
+            throw new IllegalArgumentException(
+                    "NodeGeneImpl requires exactly " + BYTE_LENGTH + " bytes, got: "
+                    + (data == null ? "null" : data.length));
+        }
+        ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+        int decodedId      = buf.getInt();
+        int ordinal        = buf.getInt();
+        NodeType[] values  = NodeType.values();
+        if (ordinal < 0 || ordinal >= values.length) {
+            throw new IllegalArgumentException("Invalid NodeType ordinal: " + ordinal);
+        }
+        double decodedBias = buf.getDouble();
+        return new NodeGeneImpl(decodedId, values[ordinal], decodedBias);
     }
 }

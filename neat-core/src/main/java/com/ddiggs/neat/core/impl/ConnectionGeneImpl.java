@@ -2,6 +2,9 @@ package com.ddiggs.neat.core.impl;
 
 import com.ddiggs.neat.core.ConnectionGene;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
  * Immutable implementation of {@link ConnectionGene}.
  *
@@ -16,6 +19,9 @@ import com.ddiggs.neat.core.ConnectionGene;
  * </pre>
  */
 public class ConnectionGeneImpl implements ConnectionGene {
+
+    /** Exact byte length produced and consumed by {@link #toBytes()} / {@link #fromBytes(byte[])}. */
+    static final int BYTE_LENGTH = 25;
 
     private final int id;
     private final int innovationNumber;
@@ -47,37 +53,37 @@ public class ConnectionGeneImpl implements ConnectionGene {
     /** {@inheritDoc} */
     @Override
     public int getId() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return id;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getInnovationNumber() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return innovationNumber;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getInNodeId() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return inNodeId;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getOutNodeId() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return outNodeId;
     }
 
     /** {@inheritDoc} */
     @Override
     public double getWeight() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return weight;
     }
 
     /** {@inheritDoc} */
     @Override
     public boolean isEnabled() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return enabled;
     }
 
     /**
@@ -87,7 +93,14 @@ public class ConnectionGeneImpl implements ConnectionGene {
      */
     @Override
     public byte[] toBytes() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        ByteBuffer buf = ByteBuffer.allocate(BYTE_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(id);
+        buf.putInt(innovationNumber);
+        buf.putInt(inNodeId);
+        buf.putInt(outNodeId);
+        buf.putDouble(weight);
+        buf.put((byte) (enabled ? 1 : 0));
+        return buf.array();
     }
 
     /**
@@ -97,6 +110,19 @@ public class ConnectionGeneImpl implements ConnectionGene {
      */
     @Override
     public ConnectionGeneImpl fromBytes(byte[] data) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        if (data == null || data.length != BYTE_LENGTH) {
+            throw new IllegalArgumentException(
+                    "ConnectionGeneImpl requires exactly " + BYTE_LENGTH + " bytes, got: "
+                    + (data == null ? "null" : data.length));
+        }
+        ByteBuffer buf       = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+        int decodedId        = buf.getInt();
+        int decodedInnov     = buf.getInt();
+        int decodedInNode    = buf.getInt();
+        int decodedOutNode   = buf.getInt();
+        double decodedWeight = buf.getDouble();
+        boolean decodedEnabled = buf.get() == 1;
+        return new ConnectionGeneImpl(decodedId, decodedInnov, decodedInNode,
+                                      decodedOutNode, decodedWeight, decodedEnabled);
     }
 }

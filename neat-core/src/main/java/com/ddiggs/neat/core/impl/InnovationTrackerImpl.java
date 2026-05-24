@@ -2,6 +2,9 @@ package com.ddiggs.neat.core.impl;
 
 import com.ddiggs.neat.core.InnovationTracker;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Standard implementation of {@link InnovationTracker}.
  *
@@ -16,9 +19,11 @@ import com.ddiggs.neat.core.InnovationTracker;
 public class InnovationTrackerImpl implements InnovationTracker {
 
     private int currentInnovationNumber;
+    private final Map<String, Integer> generationCache;
 
     public InnovationTrackerImpl() {
         this.currentInnovationNumber = 0;
+        this.generationCache = new HashMap<>();
     }
 
     /**
@@ -31,13 +36,14 @@ public class InnovationTrackerImpl implements InnovationTracker {
      */
     @Override
     public int getInnovationNumber(int fromNodeId, int toNodeId) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        String key = fromNodeId + ":" + toNodeId;
+        return generationCache.computeIfAbsent(key, k -> ++currentInnovationNumber);
     }
 
     /** {@inheritDoc} */
     @Override
     public int getCurrentInnovationNumber() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return currentInnovationNumber;
     }
 
     /**
@@ -49,6 +55,6 @@ public class InnovationTrackerImpl implements InnovationTracker {
      */
     @Override
     public void reset() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        generationCache.clear();
     }
 }
