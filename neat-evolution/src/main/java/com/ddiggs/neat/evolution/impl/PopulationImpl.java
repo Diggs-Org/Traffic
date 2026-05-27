@@ -4,7 +4,10 @@ import com.ddiggs.neat.core.Genome;
 import com.ddiggs.neat.evolution.Population;
 import com.ddiggs.neat.evolution.Species;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Standard implementation of {@link Population} that supports in-place speciation.
@@ -18,6 +21,11 @@ import java.util.List;
  */
 public class PopulationImpl implements Population {
 
+    private final List<Genome> genomes;
+    private final int generation;
+    private List<Species> species;
+    private Genome champion;
+
     /**
      * Constructs a new {@code PopulationImpl} with no species and no champion.
      *
@@ -27,7 +35,14 @@ public class PopulationImpl implements Population {
      * @throws IllegalArgumentException if {@code generation} is negative
      */
     public PopulationImpl(List<Genome> genomes, int generation) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        Objects.requireNonNull(genomes, "genomes must not be null");
+        if (generation < 0) {
+            throw new IllegalArgumentException("generation must be non-negative, got: " + generation);
+        }
+        this.genomes = Collections.unmodifiableList(new ArrayList<>(genomes));
+        this.generation = generation;
+        this.species = new ArrayList<>();
+        this.champion = null;
     }
 
     /**
@@ -39,7 +54,8 @@ public class PopulationImpl implements Population {
      * @param species updated species list; must not be {@code null}
      */
     void setSpecies(List<Species> species) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        Objects.requireNonNull(species, "species must not be null");
+        this.species = new ArrayList<>(species);
     }
 
     /**
@@ -50,7 +66,8 @@ public class PopulationImpl implements Population {
      * @param champion the genome with the highest fitness; must not be {@code null}
      */
     void setChampion(Genome champion) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        Objects.requireNonNull(champion, "champion must not be null");
+        this.champion = champion;
     }
 
     /**
@@ -60,7 +77,7 @@ public class PopulationImpl implements Population {
      */
     @Override
     public List<Genome> getGenomes() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return genomes;
     }
 
     /**
@@ -70,7 +87,7 @@ public class PopulationImpl implements Population {
      */
     @Override
     public List<Species> getSpecies() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return Collections.unmodifiableList(species);
     }
 
     /**
@@ -80,18 +97,18 @@ public class PopulationImpl implements Population {
      */
     @Override
     public Genome getChampion() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return champion;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getSize() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return genomes.size();
     }
 
     /** {@inheritDoc} */
     @Override
     public int getGeneration() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return generation;
     }
 }

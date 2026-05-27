@@ -3,7 +3,10 @@ package com.ddiggs.neat.evolution.impl;
 import com.ddiggs.neat.core.Genome;
 import com.ddiggs.neat.evolution.Species;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Immutable implementation of {@link Species}.
@@ -46,19 +49,33 @@ public class SpeciesImpl implements Species {
                        double sharedFitnessSum,
                        double bestFitness,
                        int generationsSinceImprovement) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        Objects.requireNonNull(representative, "representative must not be null");
+        Objects.requireNonNull(members, "members must not be null");
+        if (members.isEmpty()) {
+            throw new IllegalArgumentException("members must not be empty");
+        }
+        if (generationsSinceImprovement < 0) {
+            throw new IllegalArgumentException(
+                    "generationsSinceImprovement must be non-negative, got: " + generationsSinceImprovement);
+        }
+        this.id = id;
+        this.representative = representative;
+        this.members = Collections.unmodifiableList(new ArrayList<>(members));
+        this.sharedFitnessSum = sharedFitnessSum;
+        this.bestFitness = bestFitness;
+        this.generationsSinceImprovement = generationsSinceImprovement;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getId() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return id;
     }
 
     /** {@inheritDoc} */
     @Override
     public Genome getRepresentative() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return representative;
     }
 
     /**
@@ -68,24 +85,24 @@ public class SpeciesImpl implements Species {
      */
     @Override
     public List<Genome> getMembers() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return members;
     }
 
     /** {@inheritDoc} */
     @Override
     public double getSharedFitnessSum() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return sharedFitnessSum;
     }
 
     /** {@inheritDoc} */
     @Override
     public double getBestFitness() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return bestFitness;
     }
 
     /** {@inheritDoc} */
     @Override
     public int getGenerationsSinceImprovement() {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return generationsSinceImprovement;
     }
 }
