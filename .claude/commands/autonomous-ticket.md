@@ -82,6 +82,7 @@ git branch --show-current   # extract Jira key from branch name
    - Title: `[PLAN] TICKET-KEY: Summary`
    - Body: use `.github/pull_request_template.md` with a note at the top: "**This is a planning draft. Review PLAN.md and leave an Approving review to begin implementation.**"
    - Set `draft: true`
+   - Set `base: main` (all PRs must target the `main` branch)
    - Note: the `in_review` Jira hook fires on PR creation — for draft PRs this is slightly premature,
      but keeps Jira status visible. Implementation won't start until the plan is approved.
 
