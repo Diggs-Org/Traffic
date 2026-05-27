@@ -1,80 +1,132 @@
-# Plan: CLOD-18: Complete the neat-core module
+# Plan: CLOD-19: Complete the neat-evolution module
 
 ## What & Why
 
-The `neat-core` module currently defines only interfaces and an enum — it has no concrete
-implementations, no tests, and no test infrastructure. This ticket delivers the full
-implementation of every `neat-core` abstraction (`NodeGeneImpl`, `ConnectionGeneImpl`,
-`GenomeImpl`, `NeuralNetworkImpl`, `InnovationTrackerImpl`), driven by a TDD approach:
-failing TestNG tests are committed first (on this planning PR), and Phase 2 provides the
-implementations that make all tests pass. JaCoCo and Surefire are configured in the parent
-POM to enable code-coverage reporting on every build.
+The `neat-evolution` module contains eight strategy/entity interfaces
+(`Population`, `Species`, `EvolutionEngine`, `SpeciationStrategy`,
+`SelectionStrategy`, `CrossoverStrategy`, `MutationStrategy`,
+`FitnessEvaluator`) but has **zero concrete implementations and no tests**.
+This ticket completes the module by adding seven concrete implementation
+classes and a comprehensive TestNG test suite (JaCoCo + Surefire) following
+the same TDD pattern established in CLOD-18: failing tests are committed on
+this planning PR, and Phase 2 provides the implementations that make them pass.
+
+---
 
 ## Approach
 
-1. **Configure test tooling** in the root `pom.xml`:
-   - Add TestNG 7.9.0 as a `test`-scoped dependency in `<dependencyManagement>`
-   - Add `maven-surefire-plugin` 3.5.2 to `<pluginManagement>` with `reuseForks=false` for
-     clean per-test JVM state
-   - Add `jacoco-maven-plugin` 0.8.12 with `prepare-agent` (bound to `initialize`) and
-     `report` (bound to `test`) execution goals
+This ticket uses a **Test-Driven Development** workflow:
 
-2. **Create skeleton implementation classes** in `com.ddiggs.neat.core.impl` with the
-   correct constructor signatures but all interface methods throwing
-   `UnsupportedOperationException("Not yet implemented")`. This allows the test classes to
-   compile before implementations exist:
-   - `InnovationTrackerImpl` — hash-map-based within-generation cache + monotonic global counter
-   - `NodeGeneImpl` — immutable value object; 16-byte little-endian serialisation (int id + int
-     NodeType ordinal + double bias)
-   - `ConnectionGeneImpl` — immutable value object; 25-byte serialisation (4 ints + 1 double + 1 bool)
-   - `GenomeImpl` — wraps unmodifiable node/connection lists; implements standard NEAT
-     compatibility-distance formula δ = (c1·E + c2·D)/N + c3·W̄
-   - `NeuralNetworkImpl` — topological-sort feed-forward activation; applies per-node sigmoid,
-     respects disabled connections and BIAS nodes
+- **Phase 1 (this PR)** — update `pom.xml`, write skeleton classes (all methods
+  throw `UnsupportedOperationException`), commit a comprehensive failing test suite.
+- **Phase 2 (next PR)** — replace stubs with real logic; all tests pass; JaCoCo
+  line coverage ≥ 80 %.
 
-3. **Write failing TestNG tests** in `neat-core/src/test/java/com/ddiggs/neat/core/impl/`:
-   - `InnovationTrackerImplTest` — initial state, within-generation deduplication, monotonic
-     counter, reset clears cache without resetting global counter
-   - `NodeGeneImplTest` — accessors, serialisation round-trip, all four NodeTypes, invalid data
-   - `ConnectionGeneImplTest` — all accessors, enabled/disabled flag, serialisation round-trip
-   - `GenomeImplTest` — list immutability, compatibility-distance formula (zero for identical
-     genomes, positive for disjoint/excess, symmetric, coefficient scaling), serialisation round-trip
-   - `NeuralNetworkImplTest` — wrong input size exception, output array length, simple
-     feedforward correctness, disabled connections excluded, BIAS node contribution
+### Implementation Steps (Phase 2 detail)
 
-4. **Phase 2 (implementation)**: replace every `UnsupportedOperationException` stub with real
-   logic; all tests must then pass and JaCoCo must report ≥ 80% line coverage.
+1. **`SpeciesImpl`** — immutable value object. Constructor validates: non-null
+   representative, non-empty non-null member list, non-negative counts. Members are
+   defensively copied into `Collections.unmodifiableList`.
+
+2. **`PopulationImpl`** — partially mutable to support in-place speciation.
+   Stores genomes as an unmodifiable list; stores species in a mutable internal
+   list exposed as `unmodifiableList` via `getSpecies()`. Package-private
+   `setSpecies(List<Species>)` lets `DefaultSpeciationStrategy` update species.
+   Package-private `setChampion(Genome)` lets `StandardEvolutionEngine` record the
+   champion after fitness evaluation. `getChampion()` returns `null` before
+   evaluation (documented as undefined before fitness evaluation).
+
+3. **`DefaultSpeciationStrategy`** — constructor takes `c1, c2, c3`
+   (compatibility-distance coefficients) and `compatibilityThreshold`.
+   `speciate(population)` casts the `Population` to `PopulationImpl` and:
+   a. Clears current members (keeping previous-gen representatives).
+   b. For each genome in population: computes `compatibilityDistance` vs. each
+      existing species representative; joins the first species within threshold
+      or creates a new species (next auto-incremented ID).
+   c. Removes empty species.
+   d. Builds new `SpeciesImpl` objects with `sharedFitnessSum = 0`,
+      `bestFitness = 0`, `generationsSinceImprovement = 0` (fitness fields are
+      populated later by `StandardEvolutionEngine`).
+   e. Calls `((PopulationImpl) population).setSpecies(newSpecies)`.
+
+4. **`TournamentSelectionStrategy`** — constructor takes `tournamentSize k` and a
+   `Random`. `select(species, count)` runs `count` independent k-tournaments
+   over the species member list; returns an unmodifiable list of size `count`;
+   allows duplicates if `count > |members|`.
+
+5. **`StandardCrossoverStrategy`** — constructor takes a `Random`.
+   `crossover(parent1, parent2)`: parent1 is the fitter parent by convention.
+   Aligns genes by innovation number. Matching genes are inherited from either
+   parent with equal probability. Excess and disjoint genes always come from
+   `parent1`. Node gene list is copied from `parent1`. Returns a new `GenomeImpl`.
+
+6. **`StandardMutationStrategy`** — constructor takes five probabilities
+   (`weightMutationRate`, `addConnectionRate`, `addNodeRate`,
+   `toggleConnectionRate`, `perturbStdDev`) and a `Random`. Each operator is
+   applied independently at its configured rate. Structural mutations use the
+   `InnovationTracker` for consistent innovation numbers. Returns a new
+   `GenomeImpl`; the input genome is never modified.
+
+7. **`StandardEvolutionEngine`** — constructor takes all five strategies plus
+   `innovationTracker`, `crossoverRate`, and `elitismThreshold`. `nextGeneration`:
+   a. Evaluate every genome via `FitnessEvaluator` → `Map<Genome, Double> fitnessMap`.
+   b. Find champion (argmax of fitnessMap).
+   c. Call `speciationStrategy.speciate(population)` (assigns genomes to species).
+   d. Update each species with `sharedFitnessSum`, `bestFitness`, and
+      `generationsSinceImprovement` derived from `fitnessMap` and the previous
+      generation's species records (keyed by species ID).
+   e. Compute offspring quota per species proportional to `sharedFitnessSum`.
+   f. Preserve champion of each species ≥ `elitismThreshold` unchanged.
+   g. For remaining slots: select parents via `SelectionStrategy`, apply crossover
+      at `crossoverRate` (else asexual reproduction), then mutate.
+   h. Call `innovationTracker.reset()` at end of generation.
+   i. Return new `PopulationImpl` with offspring genomes, updated species, and
+      the new champion.
+
+---
 
 ## Files to Change
 
-- `pom.xml` — add TestNG, Surefire 3.5.2, JaCoCo 0.8.12 to `<pluginManagement>` and
-  `<dependencyManagement>`
-- `neat-core/src/main/java/com/ddiggs/neat/core/impl/InnovationTrackerImpl.java` — new skeleton
-- `neat-core/src/main/java/com/ddiggs/neat/core/impl/NodeGeneImpl.java` — new skeleton
-- `neat-core/src/main/java/com/ddiggs/neat/core/impl/ConnectionGeneImpl.java` — new skeleton
-- `neat-core/src/main/java/com/ddiggs/neat/core/impl/GenomeImpl.java` — new skeleton
-- `neat-core/src/main/java/com/ddiggs/neat/core/impl/NeuralNetworkImpl.java` — new skeleton
-- `neat-core/src/test/java/com/ddiggs/neat/core/impl/InnovationTrackerImplTest.java` — failing tests
-- `neat-core/src/test/java/com/ddiggs/neat/core/impl/NodeGeneImplTest.java` — failing tests
-- `neat-core/src/test/java/com/ddiggs/neat/core/impl/ConnectionGeneImplTest.java` — failing tests
-- `neat-core/src/test/java/com/ddiggs/neat/core/impl/GenomeImplTest.java` — failing tests
-- `neat-core/src/test/java/com/ddiggs/neat/core/impl/NeuralNetworkImplTest.java` — failing tests
-- `PLAN.md` — this planning document
+| File | Change |
+|------|--------|
+| `neat-evolution/pom.xml` | Add `testng` (test scope) and `jacoco-maven-plugin` |
+| `neat-evolution/src/main/java/.../impl/SpeciesImpl.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/PopulationImpl.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/DefaultSpeciationStrategy.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/TournamentSelectionStrategy.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/StandardCrossoverStrategy.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/StandardMutationStrategy.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/main/java/.../impl/StandardEvolutionEngine.java` | New skeleton → Phase 2 real impl |
+| `neat-evolution/src/test/java/.../impl/SpeciesImplTest.java` | New: ~20 failing tests |
+| `neat-evolution/src/test/java/.../impl/PopulationImplTest.java` | New: ~15 failing tests |
+| `neat-evolution/src/test/java/.../impl/DefaultSpeciationStrategyTest.java` | New: ~18 failing tests |
+| `neat-evolution/src/test/java/.../impl/TournamentSelectionStrategyTest.java` | New: ~14 failing tests |
+| `neat-evolution/src/test/java/.../impl/StandardCrossoverStrategyTest.java` | New: ~16 failing tests |
+| `neat-evolution/src/test/java/.../impl/StandardMutationStrategyTest.java` | New: ~18 failing tests |
+| `neat-evolution/src/test/java/.../impl/StandardEvolutionEngineTest.java` | New: ~15 failing tests |
+| `PLAN.md` | This planning document |
+
+---
 
 ## Acceptance Criteria Checklist
 
-- [ ] Complete implementations exist for all classes in neat-core (`NodeGeneImpl`,
-  `ConnectionGeneImpl`, `GenomeImpl`, `NeuralNetworkImpl`, `InnovationTrackerImpl`)
-- [ ] Tests follow Test-Driven Development format; this plan PR contains a full suite of
-  failing tests that pass once implementations are complete
-- [ ] Tests use the TestNG test module with `@Test`, `@BeforeMethod`, and TestNG assertions
-- [ ] Code coverage is measured by the JaCoCo plugin and reported via the Surefire plugin on
-  every `mvn test` run
+- [ ] Complete implementations exist for all concrete classes in `neat-evolution`
+  (`SpeciesImpl`, `PopulationImpl`, `DefaultSpeciationStrategy`,
+  `TournamentSelectionStrategy`, `StandardCrossoverStrategy`,
+  `StandardMutationStrategy`, `StandardEvolutionEngine`).
+- [ ] Implementation follows a TDD format: a full suite of failing unit tests is
+  committed before implementations are added (this PR = Phase 1; Phase 2 PR adds
+  implementations).
+- [ ] Tests use the **TestNG** test module.
+- [ ] Code coverage is measured with **JaCoCo** and test execution verified with
+  the **Surefire** plugin (`mvn test` succeeds after Phase 2).
+
+---
 
 ## Out of Scope
 
-- Implementations for `neat-evolution` or `neat-training` — separate tickets
-- Recurrent (cyclic) network topologies in `NeuralNetworkImpl` — feed-forward only for now
-- Concrete `ActivationFunction` utility class beyond what is inline-tested (sigmoid via lambda)
-- Performance optimisation or GPU acceleration
-- Integration tests between `neat-core` and `neat-evolution`
+- `FitnessEvaluator` concrete implementations — these belong in `neat-reward`.
+- Dynamic compatibility threshold adjustment (target-species-count auto-tuning).
+- Multi-threaded fitness evaluation.
+- The `neat-training` module — not touched in this ticket.
+- Recurrent (cyclic) network topologies.
