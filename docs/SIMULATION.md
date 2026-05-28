@@ -35,8 +35,8 @@ and together produce efficient, safe traffic flow.
 
 - Traffic flows in **one direction only**.
 - Cars are **axis-aligned rectangles** (no angular rotation).
-- Merging, acceleration, deceleration, entry, and exit are modelled; no corner-turning,
-  no weather, no physics engine.
+- Merging, acceleration, deceleration, and highway traversal are modelled; no corner-turning,
+  no weather, no physics engine, no on/off ramps.
 - Every car's behaviour is determined solely by its **neural network** (the NEAT genome),
   which takes sensor readings as input and produces driving commands as output.
 - Cars may differ in physical parameters (size, speed capability) but all share the same
@@ -56,7 +56,7 @@ X = 0                                                X = highway_length
   |------------------------------------------------------------
   |  Lane 1                                                   |
   |------------------------------------------------------------
-  |  Lane 2 (rightmost / slow lane + on/off ramps)           |
+  |  Lane 2 (rightmost / slow lane)                          |
   |                                                           |
 ```
 
@@ -75,15 +75,6 @@ X = 0                                                X = highway_length
   - Lane `i` spans Y ∈ `[i × lane_width, (i+1) × lane_width]`.
   - Lane centre: `(i + 0.5) × lane_width`.
 - A car's position is the centre of its bounding rectangle.
-
-### On-Ramps and Off-Ramps
-
-- **On-ramp**: located at X = 0 on the rightmost lane. Cars spawn here and must accelerate
-  to merge into moving traffic.
-- **Off-ramp**: located at X = `highway_length` on the rightmost lane. Cars approaching
-  within `ramp_detection_distance` (default 150 m) and intending to exit must move to the
-  rightmost lane.
-- Additional ramps at intermediate X positions are configurable but not required by default.
 
 ### Collision Model
 
@@ -109,7 +100,8 @@ specialise into different physical archetypes (compact fast cars vs. longer cons
 | Max acceleration   | `a_max`           | 2.0 – 6.0    | m/s²  | Upper limit on positive speed change per second  |
 | Max deceleration   | `d_max`           | 4.0 – 10.0   | m/s²  | Upper limit on braking force per second          |
 | Target speed       | `v_target`        | 20 – 35      | m/s   | Desired cruising speed (~72–126 km/h)            |
-| Vision range       | `v_range`         | 50 – 200     | m     | Maximum sensing distance (forward and rearward)  |
+| Vision range       | `v_range`         | 50 – 200     | m     | Maximum sensing distance in current lane (forward and rearward)  |
+| Adjacent vision    | `v_range_adjacent`| 30 – 120     | m     | Maximum sensing distance in each adjacent lane; typically 0.6 × `v_range` |
 | Min gap            | `g_min`           | 5 – 15       | m     | Minimum accepted following distance              |
 | Lane-change time   | `t_lc`            | 1.5 – 3.0    | s     | Time to complete a lane transition               |
 
@@ -149,7 +141,8 @@ The car cannot reverse (vx ≥ 0).
 
 1. The car's neural network outputs a `lane_change_left` or `lane_change_right` value.
 2. If either value exceeds the **action threshold** (0.5) and the car is not currently
-   merging, it initiates a merge:
+   merging **and** the car is beyond `merge_lockout_distance` from its spawn point, it
+   initiates a merge:
    - Check that the target lane exists.
    - Check that the blind-spot zone in the target lane is clear (`blind_spot_left/right` = 0).
    - If checks pass, set `merging = true`, record `merge_target`.
@@ -162,21 +155,36 @@ The car cannot reverse (vx ≥ 0).
 If both `lane_change_left` and `lane_change_right` are simultaneously above threshold, neither
 is executed (ambiguous command treated as hold).
 
-### Entering the Highway
+**Merge lockout**: to prevent chaotic collisions immediately after spawn, a car may not
+initiate a lane change until it has travelled at least `merge_lockout_distance` (default 50 m)
+from its spawn X position. The `merge_lockout` input node signals to the neural network
+whether this restriction is currently active.
 
-- Cars are queued before the simulation. At each spawn tick, if the on-ramp zone is clear,
-  the next car in queue spawns at X = 0, rightmost lane, with `vx = 0`.
-- The car must accelerate to merge into Lane `lane_count − 2` (second-from-right) before
-  reaching X = `entry_merge_deadline` (default 80 m). If it fails (no gap), it is removed
-  and counted as a failed entry.
+### Spawning
+
+Cars do not enter via on-ramps. Instead, all cars for a generation are spawned directly onto
+the highway at X = 0, one per lane per spawn event, **ordered by `v_target`**:
+
+- The car with the **highest** `v_target` is assigned to **Lane 0** (leftmost / fast lane).
+- Cars with progressively lower `v_target` are assigned to Lane 1, Lane 2, etc.
+- If there are more cars than lanes, additional spawn events occur at regular intervals once
+  earlier cars have advanced beyond `spawn_clear_distance` (default 80 m).
+
+| Parameter               | Default | Description                                           |
+|-------------------------|---------|-------------------------------------------------------|
+| `spawn_interval_ticks`  | 20      | Ticks between successive multi-lane spawn events      |
+| `spawn_clear_distance`  | 80 m    | Minimum X advance required before next spawn event    |
+| `merge_lockout_distance`| 50 m    | Distance from spawn point before lane changes allowed |
+| `spawn_speed`           | 10 m/s  | Initial speed of every spawned car                    |
+
+Each spawned car starts with `vx = spawn_speed` and immediately begins receiving neural
+network commands.
 
 ### Exiting the Highway
 
-- Cars that reach X = `highway_length` are removed and counted as **successful exits**.
-- Cars that have no off-ramp intention drive to the end naturally.
-- Cars can also be configured with an explicit exit intention: they must move to the rightmost
-  lane before the off-ramp X coordinate. A car that passes the off-ramp without being in
-  the rightmost lane loses its exit bonus but continues until the highway end.
+Cars that reach X = `highway_length` (i.e., front edge X + L/2 ≥ `highway_length`) are
+removed and counted as **successful exits**. No lane restriction applies at the exit; any
+lane may exit.
 
 ---
 
@@ -185,13 +193,22 @@ is executed (ambiguous command treated as hold).
 ### Sensing Zones
 
 Each car observes three lanes: its **current lane**, the **lane to the left**, and the
-**lane to the right**. Within each lane it looks:
+**lane to the right**. A driver naturally sees farther along their own lane (focused
+forward attention) than in peripheral adjacent lanes. This is modelled with two separate
+range parameters:
 
-- **Forward**: up to `v_range` metres ahead along X.
-- **Rearward**: up to `v_range` metres behind along X.
+| Range parameter          | Default | Applies to                                     |
+|--------------------------|---------|------------------------------------------------|
+| `v_range`                | 100 m   | Current lane (forward and rearward)            |
+| `v_range_adjacent`       | 60 m    | Each adjacent lane (forward and rearward)      |
+
+Within each lane the car looks:
+
+- **Forward**: up to `v_range` (current) or `v_range_adjacent` (adjacent) ahead along X.
+- **Rearward**: up to the same range behind along X.
 
 The car finds the **nearest** other car in each direction per lane. If no car is detected
-within `v_range`, the reading is reported as maximum range (normalised to 1.0).
+within the applicable range, the reading is reported as maximum range (normalised to 1.0).
 
 ### Occlusion
 
@@ -213,9 +230,25 @@ When a car is in the blind-spot zone, the gap and speed inputs for that side are
 with worst-case readings (gap = 0, relative_speed = 0), and the `blind_spot_left` or
 `blind_spot_right` input is set to 1.0.
 
+### Merging Car Visibility
+
+A car that is currently merging between lanes occupies partial space in both the source lane
+and the target lane. To reflect this physical reality:
+
+- A merging car is **visible from both its source lane and its target lane** for the duration
+  of the merge (`merging = true`).
+- Observers in either lane will find the merging car when scanning for nearest cars in that
+  lane, regardless of `merge_progress`.
+- The merging car's reported position is its current `(x, y)` centre, which moves
+  continuously toward the target lane centre over `t_lc` seconds.
+- This means a merging car can appear as the "nearest car ahead" in two different lanes
+  simultaneously, which is the correct behaviour — other drivers must react to it in both
+  lanes until it fully commits.
+
 ### Normalisation
 
-All distance readings are divided by `v_range` to produce values in [0, 1].
+Current-lane gap readings are divided by `v_range`; adjacent-lane gap readings are divided
+by `v_range_adjacent`. Both produce values in [0, 1].
 All speed readings are divided by `v_max_absolute` to produce values in [0, 1].
 Relative speed readings (speed differential) are shifted into [−1, 1] then rescaled to [0, 1]
 for network compatibility (0.5 = same speed as ego car).
@@ -252,7 +285,7 @@ All values normalised to [0, 1] unless noted.
 | 16 | `blind_spot_left`       | {0, 1}  | 1.0 if another car occupies the left blind-spot zone                 |
 | 17 | `blind_spot_right`      | {0, 1}  | 1.0 if another car occupies the right blind-spot zone                |
 | 18 | `lane_index`            | [0, 1]  | Current lane / (lane_count − 1); 0 = leftmost, 1 = rightmost        |
-| 19 | `ramp_proximity`        | [0, 1]  | 1 − (distance to nearest ramp / ramp_detection_distance); 0 = far   |
+| 19 | `merge_lockout`         | {0, 1}  | 1.0 if car is within `merge_lockout_distance` of spawn point, 0.0 when free to merge |
 
 **Bias node**: the existing `NodeType.BIAS` node in the NEAT genome is always activated at
 1.0 and is not counted in the 19 sensory inputs.
@@ -287,7 +320,7 @@ A generation run evaluates all genomes in the current population. It proceeds as
 
 ```
 while (cars_remaining > 0 AND tick < max_ticks):
-    1. SPAWN    — if the on-ramp is clear and the queue is non-empty, add the next car
+    1. SPAWN    — if spawn interval elapsed and spawn zone is clear, add cars to each lane
     2. OBSERVE  — for each active car, compute its 19-element input vector
     3. ACTIVATE — for each active car, call NeuralNetwork.activate(inputs)
     4. ACT      — apply throttle, brake, and lane-change outputs
@@ -299,11 +332,17 @@ while (cars_remaining > 0 AND tick < max_ticks):
    10. TICK++
 ```
 
-### Entry (Step 1 in detail)
+### Spawn (Step 1 in detail)
 
-- Spawn interval: one new car every `spawn_interval_ticks` (default 10 ticks = 1 s).
-- The on-ramp zone (X ∈ [0, 20 m], rightmost lane) must be free of other cars.
-- Spawned car: X = 0, Y = rightmost lane centre, `vx = 5 m/s` (initial push).
+- Every `spawn_interval_ticks` (default 20 ticks = 2 s), the simulation attempts a spawn
+  event if all cars currently in the spawn zone (X ∈ [0, `spawn_clear_distance`]) have
+  advanced beyond `spawn_clear_distance`.
+- On a spawn event, one car is placed into **each lane** simultaneously at X = 0, lane
+  centre Y, with `vx = spawn_speed` (default 10 m/s).
+- Lane assignment for that spawn event is ordered by `v_target` descending: the fastest
+  car goes to Lane 0 (leftmost), the next to Lane 1, and so on.
+- All spawned cars begin with `merge_lockout = 1.0` (lane changes disabled) until they
+  cross `merge_lockout_distance` (default 50 m).
 
 ### Traverse (Steps 2–9 in detail)
 
@@ -461,4 +500,4 @@ The following are explicitly excluded from this simulation design:
 | Driver fatigue / attention      | Human cognitive modelling is outside NEAT's scope             |
 | Cornering / curved roads        | Rotation would require a 2D physics engine; the axis-aligned bounding-box collision model would no longer apply |
 | Vehicle communication (V2X)    | Cars may only sense passively; no inter-car messaging         |
-| Multi-lane side-by-side spawning | Only one on-ramp at a time; simplifies entry sequencing      |
+| On/off ramps                    | Ramp entry/exit adds complexity better suited to post-training evaluation; training uses direct per-lane spawning |
