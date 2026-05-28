@@ -224,4 +224,51 @@ public class StandardMutationStrategyTest {
     public void testConstructor_negativePerturbStdDev_throwsIllegalArgumentException() {
         new StandardMutationStrategy(0.5, 0.0, 0.0, 0.0, -0.1, new Random(SEED));
     }
+
+    // -------------------------------------------------------------------------
+    // addConnection edge cases
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void testMutate_addConnection_fullyConnectedGenome_connectionCountUnchanged() {
+        // baseGenome: INPUT(1) → OUTPUT(2) — the only legal feed-forward connection already exists.
+        // addConnection must detect no candidates and leave the genome unchanged.
+        StandardMutationStrategy addConnOnly = new StandardMutationStrategy(
+                0.0, 1.0, 0.0, 0.0, PERTURB_STD, new Random(SEED));
+        Genome mutated = addConnOnly.mutate(baseGenome, tracker);
+        Assert.assertEquals(mutated.getConnectionGenes().size(),
+                baseGenome.getConnectionGenes().size(),
+                "When no feed-forward connections are available, addConnection must be a no-op");
+    }
+
+    @Test
+    public void testMutate_addConnection_neverUsesOutputAsSource() {
+        // Three-node genome: INPUT(1), HIDDEN(2), OUTPUT(3).
+        // Existing connections: INPUT→HIDDEN, HIDDEN→OUTPUT.
+        // The only remaining feed-forward slot is INPUT→OUTPUT.
+        // OUTPUT must never appear as a source in any added connection.
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(1, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(2, NodeType.HIDDEN, 0.0),
+                new NodeGeneImpl(3, NodeType.OUTPUT, 0.0));
+        List<ConnectionGene> conns = List.of(
+                new ConnectionGeneImpl(1, 1, 1, 2, 1.0, true),
+                new ConnectionGeneImpl(2, 2, 2, 3, 1.0, true));
+        Genome threeNodeGenome = new GenomeImpl(nodes, conns);
+
+        StandardMutationStrategy addConnOnly = new StandardMutationStrategy(
+                0.0, 1.0, 0.0, 0.0, PERTURB_STD, new Random(SEED));
+
+        for (int trial = 0; trial < 50; trial++) {
+            Genome mutated = addConnOnly.mutate(threeNodeGenome, tracker);
+            for (ConnectionGene cg : mutated.getConnectionGenes()) {
+                int srcId = cg.getInNodeId();
+                nodes.stream()
+                        .filter(n -> n.getId() == srcId)
+                        .findFirst()
+                        .ifPresent(n -> Assert.assertNotEquals(n.getNodeType(), NodeType.OUTPUT,
+                                "addConnection must never add a connection with an OUTPUT node as source"));
+            }
+        }
+    }
 }

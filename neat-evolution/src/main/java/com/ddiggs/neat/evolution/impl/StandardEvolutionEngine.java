@@ -22,6 +22,24 @@ import java.util.Random;
 /**
  * Standard implementation of {@link EvolutionEngine} orchestrating one complete NEAT
  * generational cycle.
+ *
+ * <p>The cycle executes the following steps in order:
+ * <ol>
+ *   <li>Evaluate fitness for every genome in the current population.</li>
+ *   <li>Record the overall champion (argmax fitness).</li>
+ *   <li>Speciate the population via the injected {@link SpeciationStrategy}.</li>
+ *   <li>Compute shared fitness sums and offspring quotas proportional to those sums.
+ *       Remainder slots are distributed starting from a randomly chosen species to avoid
+ *       systematic bias toward lower-indexed species.</li>
+ *   <li>Produce offspring: for species with {@code size >= elitismThreshold} the fittest
+ *       member is carried over unmutated (elitism); remaining slots are filled by
+ *       crossover (probability {@code crossoverRate}) or asexual cloning, both followed
+ *       by mutation.</li>
+ *   <li>Reset the innovation tracker's within-generation cache <em>after</em> offspring
+ *       production so that structural mutations in the same generation share innovation
+ *       numbers, matching the original NEAT paper's intent.</li>
+ *   <li>Speciate the new population and return it.</li>
+ * </ol>
  */
 public class StandardEvolutionEngine implements EvolutionEngine {
 
@@ -126,9 +144,9 @@ public class StandardEvolutionEngine implements EvolutionEngine {
                         updatedSpecies.get(i).getSharedFitnessSum() / totalSharedFitness * popSize);
                 assigned += quotas[i];
             }
-            // Distribute remainder to species with highest fractional share
-            // (simple: give remaining slots to first species)
-            for (int i = 0; assigned < popSize; i = (i + 1) % updatedSpecies.size()) {
+            // Distribute remainder starting from a random species to avoid index-0 bias
+            int startIdx = random.nextInt(updatedSpecies.size());
+            for (int i = startIdx; assigned < popSize; i = (i + 1) % updatedSpecies.size()) {
                 quotas[i]++;
                 assigned++;
             }

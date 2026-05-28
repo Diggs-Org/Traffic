@@ -111,8 +111,12 @@ public class StandardMutationStrategy implements MutationStrategy {
 
         List<int[]> candidates = new ArrayList<>();
         for (NodeGene from : nodes) {
+            // OUTPUT nodes are sinks in feed-forward topologies — they must not be sources
+            if (from.getNodeType() == NodeType.OUTPUT) continue;
             for (NodeGene to : nodes) {
+                // INPUT and BIAS are fixed-value sources; they must not receive weighted input
                 if (to.getNodeType() == NodeType.INPUT) continue;
+                if (to.getNodeType() == NodeType.BIAS) continue;
                 if (from.getId() == to.getId()) continue;
                 if (!existing.contains(from.getId() + ":" + to.getId())) {
                     candidates.add(new int[]{from.getId(), to.getId()});

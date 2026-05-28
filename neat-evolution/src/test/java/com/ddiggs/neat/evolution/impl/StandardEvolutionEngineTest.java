@@ -213,4 +213,22 @@ public class StandardEvolutionEngineTest {
                 new StandardMutationStrategy(0.5, 0.05, 0.03, 0.05, 0.1, new Random(SEED)),
                 tracker, 0.75, 0, new Random(SEED));
     }
+
+    // -------------------------------------------------------------------------
+    // Elitism test
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void testNextGeneration_elitism_championCarriedOverUnmutated() {
+        // genome2 has the highest fitness (weight=3.0) under WEIGHT_SUM_EVALUATOR.
+        // The engine's elitismThreshold=2; all 3 genomes land in one species (very similar),
+        // so elitism applies and genome2 must be copied into the next generation unchanged.
+        Population next = engine.nextGeneration(generation0, WEIGHT_SUM_EVALUATOR);
+        double champFitness = WEIGHT_SUM_EVALUATOR.evaluate(genome2); // 3.0
+        boolean championFound = next.getGenomes().stream()
+                .anyMatch(g -> Math.abs(WEIGHT_SUM_EVALUATOR.evaluate(g) - champFitness) < 1e-15);
+        Assert.assertTrue(championFound,
+                "Elitism must carry the champion (fitness=" + champFitness
+                + ") into the next generation without mutation");
+    }
 }
