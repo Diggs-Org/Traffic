@@ -349,6 +349,18 @@ public class GenomeImplTest {
     // -------------------------------------------------------------------------
 
     /**
+     * Covers the trailing-bytes guard: a byte array that is valid up to the last connection
+     * gene but has one extra byte appended must be rejected.
+     */
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testFromBytes_trailingBytes_throwsIllegalArgumentException() {
+        byte[] valid = minimalGenome.toBytes();
+        byte[] padded = new byte[valid.length + 1]; // one extra trailing byte
+        System.arraycopy(valid, 0, padded, 0, valid.length);
+        minimalGenome.fromBytes(padded);
+    }
+
+    /**
      * Covers GenomeImpl.java line 122 ({@code disjoint++}): a gene present in only one
      * genome that falls <em>within</em> the overlapping innovation-number range.
      *

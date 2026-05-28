@@ -240,4 +240,86 @@ public class NeuralNetworkImplTest {
         Assert.assertEquals(output[0], expected, 1e-9,
                 "Node bias of 1.0 on OUTPUT node must shift activation from σ(0) to σ(1)");
     }
+
+    // -------------------------------------------------------------------------
+    // activate() — non-finite input validation
+    // -------------------------------------------------------------------------
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testActivate_nanInput_throwsIllegalArgumentException() {
+        minimalNet.activate(new double[]{Double.NaN});
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testActivate_positiveInfinityInput_throwsIllegalArgumentException() {
+        minimalNet.activate(new double[]{Double.POSITIVE_INFINITY});
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testActivate_negativeInfinityInput_throwsIllegalArgumentException() {
+        minimalNet.activate(new double[]{Double.NEGATIVE_INFINITY});
+    }
+
+    // -------------------------------------------------------------------------
+    // activate() — cyclic genome detection
+    // -------------------------------------------------------------------------
+
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testActivate_cyclicGenome_throwsIllegalStateException() {
+        // HIDDEN(1) → OUTPUT(2) is fine, but OUTPUT(2) → HIDDEN(1) creates a cycle.
+        // INPUT(0) has no enabled outgoing path into the cycle, so HIDDEN and OUTPUT
+        // nodes are stuck with in-degree > 0 and never enter the Kahn queue.
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(0, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(1, NodeType.HIDDEN, 0.0),
+                new NodeGeneImpl(2, NodeType.OUTPUT, 0.0)
+        );
+        List<ConnectionGene> conns = List.of(
+                new ConnectionGeneImpl(0, 1, 1, 2, 1.0, true),   // HIDDEN → OUTPUT
+                new ConnectionGeneImpl(1, 2, 2, 1, 1.0, true)    // OUTPUT → HIDDEN (cycle)
+        );
+        Genome cyclicGenome = new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(conns));
+        NeuralNetworkImpl cyclicNet = new NeuralNetworkImpl(cyclicGenome, SIGMOID);
+        cyclicNet.activate(new double[]{1.0});
+    }
+
+    // -------------------------------------------------------------------------
+    // activate() — non-sigmoid activation function
+    // -------------------------------------------------------------------------
+
+    @Test
+    public void testActivate_tanhActivation_producesCorrectOutput() {
+        ActivationFunction tanh = Math::tanh;
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(0, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(1, NodeType.OUTPUT, 0.0)
+        );
+        List<ConnectionGene> conns = List.of(
+                new ConnectionGeneImpl(0, 1, 0, 1, 1.0, true)
+        );
+        NeuralNetworkImpl tanhNet = new NeuralNetworkImpl(
+                new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(conns)), tanh);
+        double[] out = tanhNet.activate(new double[]{1.0});
+        Assert.assertEquals(out[0], Math.tanh(1.0), 1e-9,
+                "tanh activation: output for input 1.0 with weight 1.0 must equal tanh(1.0)");
+    }
+
+    @Test
+    public void testActivate_reluActivation_clampsNegative() {
+        // ReLU: max(0, x)
+        ActivationFunction relu = x -> Math.max(0.0, x);
+        List<NodeGene> nodes = List.of(
+                new NodeGeneImpl(0, NodeType.INPUT,  0.0),
+                new NodeGeneImpl(1, NodeType.OUTPUT, 0.0)
+        );
+        List<ConnectionGene> conns = List.of(
+                new ConnectionGeneImpl(0, 1, 0, 1, 1.0, true)
+        );
+        NeuralNetworkImpl reluNet = new NeuralNetworkImpl(
+                new GenomeImpl(new ArrayList<>(nodes), new ArrayList<>(conns)), relu);
+        Assert.assertEquals(reluNet.activate(new double[]{-5.0})[0], 0.0, 1e-9,
+                "ReLU of negative net-input must be 0.0");
+        Assert.assertEquals(reluNet.activate(new double[]{3.0})[0], 3.0, 1e-9,
+                "ReLU of positive net-input must equal the input");
+    }
 }

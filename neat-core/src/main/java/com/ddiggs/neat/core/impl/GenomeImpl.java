@@ -197,6 +197,11 @@ public class GenomeImpl implements Genome {
             conns.add(connProto.fromBytes(connBytes));
         }
 
+        if (buf.hasRemaining()) {
+            throw new IllegalArgumentException(
+                    "Malformed genome data: " + buf.remaining() + " unexpected trailing byte(s)");
+        }
+
         return new GenomeImpl(nodes, conns);
     }
 }

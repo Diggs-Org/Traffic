@@ -27,7 +27,8 @@ import java.util.Queue;
  * own bias field.
  *
  * <p><strong>Limitation:</strong> this implementation supports acyclic (feed-forward)
- * topologies only. Cyclic (recurrent) genomes are out of scope for this ticket.
+ * topologies only. Passing a genome that contains a cycle will cause {@link #activate}
+ * to throw {@link IllegalStateException}.
  */
 public class NeuralNetworkImpl implements NeuralNetwork {
 
@@ -55,7 +56,11 @@ public class NeuralNetworkImpl implements NeuralNetwork {
      * activations of all {@link NodeType#OUTPUT} nodes in genome order.
      *
      * @throws IllegalArgumentException if {@code inputs.length} does not match the number of
-     *                                  INPUT nodes in the genome
+     *                                  INPUT nodes in the genome, or if any input value is
+     *                                  not finite (NaN or infinite)
+     * @throws IllegalStateException    if the genome contains a cycle (not a valid feed-forward
+     *                                  topology), detected when Kahn's algorithm cannot process
+     *                                  all nodes
      */
     @Override
     public double[] activate(double[] inputs) {
@@ -72,6 +77,12 @@ public class NeuralNetworkImpl implements NeuralNetwork {
         if (inputs.length != inputIds.size()) {
             throw new IllegalArgumentException(
                     "Expected " + inputIds.size() + " input(s) but got " + inputs.length);
+        }
+        for (double v : inputs) {
+            if (!Double.isFinite(v)) {
+                throw new IllegalArgumentException(
+                        "Input values must be finite; got: " + v);
+            }
         }
 
         // ── 2. Build helper structures ───────────────────────────────────────
@@ -120,6 +131,7 @@ public class NeuralNetworkImpl implements NeuralNetwork {
             }
         }
 
+        int processedCount = 0;
         while (!queue.isEmpty()) {
             int nodeId   = queue.poll();
             NodeGene gene = nodeMap.get(nodeId);
@@ -135,6 +147,7 @@ public class NeuralNetworkImpl implements NeuralNetwork {
                 activation = activationFunction.activate(netInput.get(nodeId));
             }
             activations.put(nodeId, activation);
+            processedCount++;
 
             // Propagate to downstream nodes via enabled connections
             for (ConnectionGene conn : outgoing.get(nodeId)) {
@@ -147,11 +160,17 @@ public class NeuralNetworkImpl implements NeuralNetwork {
             }
         }
 
+        // Nodes left unprocessed means a cycle prevented them from ever reaching in-degree 0
+        if (processedCount < nodes.size()) {
+            throw new IllegalStateException(
+                    "Cyclic genome detected: " + (nodes.size() - processedCount)
+                    + " node(s) could not be processed — genome is not a valid feed-forward topology");
+        }
+
         // ── 5. Collect OUTPUT activations in genome order ────────────────────
         return nodes.stream()
                 .filter(n -> n.getNodeType() == NodeType.OUTPUT)
-                .mapToDouble(n -> activations.getOrDefault(n.getId(),
-                        activationFunction.activate(netInput.getOrDefault(n.getId(), 0.0))))
+                .mapToDouble(n -> activations.get(n.getId()))
                 .toArray();
     }
 
