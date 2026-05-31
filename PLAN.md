@@ -1,63 +1,72 @@
-# Plan: CLOD-20: Create a markdown file explaining how the actual traffic simulation will work
+# Plan: CLOD-22: Create traffic-sim interfaces
 
 ## What & Why
 
-This ticket produces `docs/SIMULATION.md` — a design specification describing the traffic
-simulation that will eventually be implemented as the `neat-reward` module. The document must
-cover simulation mechanics (lanes, car properties, enter/exit flow), the neural-network I/O
-contract (inputs the car senses, outputs it emits), and the NEAT-specific evaluation strategy
-(how individual fitness, population fitness, and species fitness are measured). It establishes
-the shared vocabulary and behavioural contract before any Java code is written.
+A new Maven module (`trafficsim`) must be created to house the traffic simulation domain.
+Based on `docs/SIMULATION.md`, this module defines all interfaces — road geometry, car
+physics & state, vision sensing, neural-network I/O, simulation lifecycle, fitness
+recording, and aggregate metrics — with full Javadoc. Downstream implementation tickets
+(`neat-reward` / `neat-trafficsim-impl`) will provide concrete implementations of these
+contracts. No implementation code or tests are included in this ticket (interfaces have no
+behaviour to test).
 
 ## Approach
 
-1. Create `docs/` directory and write `docs/SIMULATION.md` with the following top-level sections:
-   - **Overview** — goals, non-goals, guiding constraints
-   - **Road Model** — lane layout, coordinate system, simulation tick/time-step
-   - **Car Model** — rectangle geometry, per-car properties (some fixed, some evolved)
-   - **Car Behaviours** — speed control, lane changing with gap acceptance, entering/exiting
-   - **Vision Model** — forward/rearward/lateral sensing, blind-spot zones, occlusion
-   - **Neural-Network Interface** — exact list of INPUT nodes and OUTPUT nodes
-   - **Simulation Lifecycle** — how a generation run proceeds (spawn → traverse → score → end)
-   - **Fitness & Evaluation** — individual fitness formula, population-level metrics, species evaluation
-   - **Population Diversity** — why heterogeneity is required and how it is encouraged
-   - **Out of Scope** — explicit non-goals (physics engine, weather, turning, fuel, etc.)
+1. Add `trafficsim` as a Maven sub-module in the parent `pom.xml`.
+2. Create `trafficsim/pom.xml` inheriting from `neat-parent`; depend on `neat-core` and
+   `neat-evolution` since `Simulation` references `Population` and `GenerationResult`
+   references `Genome`.
+3. Create the following interfaces in
+   `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/`, each with full Javadoc matching
+   the style of `NeuralNetwork.java` and `FitnessEvaluator.java`:
 
-2. Define the **19 INPUT nodes** covering: current speed, per-lane forward/rearward gaps and
-   speed differentials (3 lanes × 4 readings = 12), lane-existence flags (2), blind-spot
-   occupancy flags (2), normalised lane index (1), and proximity to on/off ramps (2).
+   | Interface           | Section in SIMULATION.md | Responsibility |
+   |---------------------|--------------------------|----------------|
+   | `SimulationConfig`  | §2, §3, §4, §7           | All tuneable parameters (highway_length, lane_count, tick_dt, v_max_absolute, spawn params, etc.) |
+   | `Road`              | §2                       | Lane geometry queries (lane count, width, centre-Y, validity) |
+   | `CarPhysics`        | §3 Physical Properties   | Fixed properties assigned at spawn (L, W, a_max, d_max, v_target, v_range, g_min, t_lc) |
+   | `CarState`          | §3 State Variables       | Mutable per-tick state (x, y, vx, lane, merging, merge_progress, distance, collisions, ticks_alive) |
+   | `Car`               | §3                       | Simulation entity: id, physics, state, and associated NeuralNetwork |
+   | `SensorInput`       | §6 Inputs (19 nodes)     | The 19-element normalised observation vector fed into the neural network; `toArray()` method |
+   | `DriveCommand`      | §6 Outputs (4 nodes)     | The 4-element action vector produced by the neural network |
+   | `VisionSystem`      | §5                       | Computes a `SensorInput` for a car given the road and all active cars |
+   | `SpawnStrategy`     | §4 Spawning, §7 Spawn    | Decides when to spawn and creates new `Car` instances from genomes |
+   | `Simulation`        | §7                       | Generational run lifecycle: `setup`, `runGeneration` |
+   | `FitnessRecord`     | §8.1                     | Per-car fitness accumulator with component breakdown; `computeFitness(SimulationConfig)` |
+   | `GenerationResult`  | §7 Termination, §8       | Maps genomes to fitness records; exposes exit/spawn counts |
+   | `PopulationMetrics` | §8.2                     | Six aggregate statistics (throughput, avg speed, variance, collision rate, near-miss rate, diversity index) |
 
-3. Define the **4 OUTPUT nodes**: throttle (0–1), brake (0–1), lane-change-left intention
-   (0–1), lane-change-right intention (0–1).
-
-4. Write the evaluation section covering:
-   - Individual fitness: throughput contribution + average speed ratio + collision penalty
-   - Population evaluation: aggregate throughput, speed variance, collision rate per generation
-   - Species evaluation: species average fitness with stagnation penalty mirroring
-     `DefaultSpeciationStrategy.generationsSinceImprovement`
+4. Update parent `pom.xml` to include the new `<module>trafficsim</module>`.
+5. Commit and push.
 
 ## Files to Change
 
-- `docs/SIMULATION.md` — new file; the entire deliverable for this ticket
+- `pom.xml` — add `<module>trafficsim</module>`
+- `trafficsim/pom.xml` — new module POM
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/SimulationConfig.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/Road.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/CarPhysics.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/CarState.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/Car.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/SensorInput.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/DriveCommand.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/VisionSystem.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/SpawnStrategy.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/Simulation.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/FitnessRecord.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/GenerationResult.java` — new
+- `trafficsim/src/main/java/com/ddiggs/neat/trafficsim/PopulationMetrics.java` — new
 
 ## Acceptance Criteria Checklist
 
-- [ ] A file has been created explaining the major points of the simulation (road model, car
-      model, behaviours, vision, lifecycle)
-- [ ] A list of input and output nodes the simulation will use is documented (19 inputs, 4
-      outputs, each with name, range, and description)
-- [ ] An explanation of how the simulation would be run (how cars enter, traverse, and exit
-      the simulation system)
-- [ ] An explanation of how different populations will be evaluated (aggregate fitness formula,
-      throughput, speed, collision metrics)
-- [ ] An explanation of how different species will be evaluated (species average fitness,
-      stagnation penalty, niche protection)
+- [ ] A new `trafficsim` Maven module exists and is registered in `pom.xml`
+- [ ] All interfaces listed above are created in package `com.ddiggs.neat.trafficsim`
+- [ ] Every interface and every method has full Javadoc (summary line, `<p>` paragraphs for context, `@param`, `@return`, `@throws` as appropriate)
+- [ ] The module compiles cleanly (`mvn compile` passes)
 
 ## Out of Scope
 
-- Any Java implementation (that is a future ticket)
-- Realistic physics: steering around corners, vehicle dynamics, suspension
-- Environmental conditions: weather, road surface friction, lighting
-- Multi-directional traffic or intersections
-- Traffic signals or road rules beyond basic lane discipline
-- Fuel consumption, emissions, or driver fatigue modelling
+- No concrete implementation classes (`impl` package is left empty)
+- No unit tests (interfaces have no executable behaviour)
+- No simulation runner, rendering, or visualisation
+- No `neat-reward` integration (that is a future ticket)

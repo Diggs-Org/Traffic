@@ -17,6 +17,7 @@
         <module>neat-core</module>
         <module>neat-evolution</module>
         <module>neat-training</module>
+        <module>trafficsim</module>
     </modules>
 
     <properties>
