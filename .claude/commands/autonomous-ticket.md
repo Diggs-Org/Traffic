@@ -17,37 +17,35 @@ Run these checks in order and execute the first matching phase:
 
 ```
 1. Does the message contain a Jira ticket key (e.g. PROJ-123)?
-   YES → extract the key; call it KEY
-   NO  → ask the user "Which ticket should I work on?"
+   YES → extract the key; call it KEY; go to step 2
+   NO  → does the message suggest a review has happened? (step 3)
+         if neither → ask the user "Which ticket should I work on?"
 
-2. Does a remote branch whose name starts with KEY exist?
-   NO  → run Phase 1 (Plan)
-   YES → fetch the open PR for that branch
+2. Does the message reference new work on KEY (assign, complete, do, start, work on, implement)?
+   YES → run Phase 1 (Plan). New branches are always cut from main.
 
-3. Is there an open PR for the KEY branch?
-   NO  → run Phase 1 (branch exists but no PR — re-create the draft PR from PLAN.md)
+3. Does the message suggest a review has happened (review performed, review done, I left a review, etc.)?
+   YES → get the current branch, extract KEY from it, fetch the open PR, then:
 
-4. Is the PR a DRAFT?
-   YES, and latest review is APPROVED  → run Phase 2 (Implement)
-   YES, no approving review yet        → tell user "Plan is awaiting review" and stop
+         Is the PR a DRAFT?
+           YES, latest review is APPROVED  → run Phase 2 (Implement)
+           YES, no approving review yet    → tell user "Plan is awaiting review" and stop
 
-5. PR is NOT a draft:
-   Latest review is CHANGES_REQUESTED → run Phase 3 (Address Comments)
-   Latest review is APPROVED          → run Phase 4 (Merge)
-   No reviews yet                     → tell user "PR is awaiting review" and stop
+         PR is NOT a draft:
+           Latest review is CHANGES_REQUESTED → run Phase 3 (Address Comments)
+           Latest review is APPROVED          → run Phase 4 (Merge)
+           No reviews yet                     → tell user "PR is awaiting review" and stop
 ```
 
-**Common trigger phrases that all map to this algorithm** (not exhaustive):
-- "You have been assigned ticket KEY" → Phase 1 (no branch yet)
-- "Complete ticket KEY" / "Do ticket KEY" / "Work on KEY" → Phase 1 (no branch yet)
+**Common trigger phrases** (not exhaustive):
+- "You have been assigned ticket KEY" / "Complete ticket KEY" / "Do KEY" / "Work on KEY" → Phase 1
 - "A PR review has been performed" / "Review is done" / "I left a review" → Phase 2/3/4
-- "Continue working on KEY" → picks up wherever state-detection lands
 
-To check branch and PR state:
+To inspect PR state:
 
 ```bash
-git ls-remote --heads origin "KEY*"   # check if branch exists remotely
-# then use mcp__github__pull_request_read to check PR draft status and review state
+git branch --show-current             # extract KEY from branch name
+# then use mcp__github__pull_request_read to check draft status and review state
 ```
 
 ---
@@ -96,6 +94,7 @@ git ls-remote --heads origin "KEY*"   # check if branch exists remotely
 
 4. Create the implementation branch via `mcp__github__create_branch`:
    - Branch name: `TICKET-KEY/short-description` (Jira key MUST be the prefix)
+   - Always set `from_branch: main` — new branches are always cut from main, never from the current working branch
    - The PostToolUse hook will automatically transition Jira → In Progress and post a comment
 
 5. Commit `PLAN.md` to the branch and push.
