@@ -7,24 +7,46 @@ Handles an assigned Jira ticket end-to-end. Project values (`JIRA_PROJECT_KEY`,
 
 ## Triggers
 
-### Trigger 1 — "You have been assigned ticket [KEY]"
+The skill uses **intent detection**, not exact phrases. On entry, run the state-detection
+algorithm below to determine which phase to execute regardless of how the user worded
+their request.
 
-Runs **Phase 1 (Plan)**. The ticket key (e.g. `PROJ-123`) is supplied in the message.
-Fetch the ticket, explore the codebase, create a plan, and open a draft PR.
+### State-Detection Algorithm
 
-### Trigger 2 — "A PR review has been performed"
+Run these checks in order and execute the first matching phase:
 
-Detects the current phase from the active git branch → open PR → review state, then runs
-the appropriate phase:
+```
+1. Does the message contain a Jira ticket key (e.g. PROJ-123)?
+   YES → extract the key; call it KEY
+   NO  → ask the user "Which ticket should I work on?"
 
-- Draft PR with approving review → **Phase 2** (implement)
-- Non-draft PR with changes requested → **Phase 3** (address comments)
-- Non-draft PR with approval → **Phase 4** (merge)
+2. Does a remote branch whose name starts with KEY exist?
+   NO  → run Phase 1 (Plan)
+   YES → fetch the open PR for that branch
 
-To detect state:
+3. Is there an open PR for the KEY branch?
+   NO  → run Phase 1 (branch exists but no PR — re-create the draft PR from PLAN.md)
+
+4. Is the PR a DRAFT?
+   YES, and latest review is APPROVED  → run Phase 2 (Implement)
+   YES, no approving review yet        → tell user "Plan is awaiting review" and stop
+
+5. PR is NOT a draft:
+   Latest review is CHANGES_REQUESTED → run Phase 3 (Address Comments)
+   Latest review is APPROVED          → run Phase 4 (Merge)
+   No reviews yet                     → tell user "PR is awaiting review" and stop
+```
+
+**Common trigger phrases that all map to this algorithm** (not exhaustive):
+- "You have been assigned ticket KEY" → Phase 1 (no branch yet)
+- "Complete ticket KEY" / "Do ticket KEY" / "Work on KEY" → Phase 1 (no branch yet)
+- "A PR review has been performed" / "Review is done" / "I left a review" → Phase 2/3/4
+- "Continue working on KEY" → picks up wherever state-detection lands
+
+To check branch and PR state:
 
 ```bash
-git branch --show-current   # extract Jira key from branch name
+git ls-remote --heads origin "KEY*"   # check if branch exists remotely
 # then use mcp__github__pull_request_read to check PR draft status and review state
 ```
 
@@ -32,7 +54,7 @@ git branch --show-current   # extract Jira key from branch name
 
 ## Phase 1: New Ticket — Create Plan
 
-**When:** Triggered by "You have been assigned ticket [KEY]". No branch exists yet.
+**When:** State-detection finds no remote branch prefixed with the ticket key.
 
 1. Fetch the ticket via `jira_get_issue` with fields:
    `assignee,issuetype,updated,summary,reporter,description,created,labels,priority,status,customfield_10072`
@@ -94,9 +116,7 @@ git branch --show-current   # extract Jira key from branch name
 
 ## Phase 2: Plan Approved — Implement
 
-**When:** Triggered by "A PR review has been performed". A draft PR exists AND it has an approving review with no changes-requested reviews after the approval.
-
-How to detect: use `mcp__github__pull_request_read` on the draft PR, then check the reviews list.
+**When:** State-detection finds a draft PR with an approving review (and no subsequent changes-requested review).
 
 1. Check out the plan branch (it already exists).
 
@@ -135,7 +155,7 @@ How to detect: use `mcp__github__pull_request_read` on the draft PR, then check 
 
 ## Phase 3: Review Requested — Address Comments
 
-**When:** Triggered by "A PR review has been performed". A non-draft PR exists AND its latest review state is `CHANGES_REQUESTED`.
+**When:** State-detection finds a non-draft PR whose latest review is `CHANGES_REQUESTED`.
 
 1. Read the PR via `mcp__github__pull_request_read` — the PostToolUse hook will inject all
    review comments, inline comments, and PR-level comments into context automatically.
@@ -159,7 +179,7 @@ How to detect: use `mcp__github__pull_request_read` on the draft PR, then check 
 
 ## Phase 4: PR Approved — Merge
 
-**When:** Triggered by "A PR review has been performed". A non-draft PR exists AND its latest review state is `APPROVED` with no unresolved `CHANGES_REQUESTED` reviews after the approval.
+**When:** State-detection finds a non-draft PR whose latest review is `APPROVED` with no subsequent `CHANGES_REQUESTED` review.
 
 1. Squash merge via `mcp__github__merge_pull_request`:
    - Merge method: `squash`
